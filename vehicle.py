@@ -70,6 +70,7 @@ class _Vehicle:
         )
 
     def empty_weight(self):
+        """Return the empty vehicle weight."""
         return (
             self.chassis.weight
             + self.battery.weight
@@ -77,6 +78,56 @@ class _Vehicle:
             + self.motor.weight
             + self.autonomy.weight
         )
+
+    def total_weight(self):
+        """Return the vehicle weight with passengers."""
+        load_factor = 0.75
+        passenger_weight = 100  # kg
+        return self.empty_weight() + (self.chassis.pax * load_factor * passenger_weight)
+
+    def charge_time(self):
+        """Return the charge time in hours."""
+        return self.battery.capacity / self.charger.power
+
+    def power_consumption(self):
+        """Return the power consumption [Wh/km]."""
+
+        return (
+            self.chassis.power
+            + 0.1 * (self.total_weight() - self.chassis.weight)
+            + self.autonomy.power
+        )
+
+    def range(self):
+        """Return the range [km]."""
+        return (self.battery.capacity * 1000) / self.power_consumption()
+
+    def speed(self):
+        """Return the speed [km/hr]."""
+        pass
+
+    def up_time(self):
+        """Return uptime [hr]."""
+        return self.range() / self.speed()
+
+    def down_time(self):
+        """Return downtime [hr]."""
+        return self.charge_time() + 0.25
+
+    def availability(self):
+        """Return availability [%]."""
+        return self.up_time() / (self.up_time() + self.down_time())
+
+    def trip_throughput(self, distance):
+        """Return the rate of trips [trip/hr]."""
+        dwell_time = 1 / 60  # hr
+        trip_time = (distance * 2) / self.speed() + (2 * dwell_time)
+        return (1 / trip_time) * self.availability()
+
+    def pax_throughput(self, distance):
+        """Return maximum throughput [pax/hr] given an average one-way trip distance."""
+        load_factor = 0.75
+        return self.trip_throughput(distance) * self.chassis.pax * load_factor
 
 
 class RoadVehicle(_Vehicle):
@@ -89,7 +140,12 @@ class RoadVehicle(_Vehicle):
                 f"Battery weight ({b.weight}) cannot exceed 1/3 chassis weight ({c.weight})."
             )
 
-        super.__init__(c, b, chrg, m, a)
+        super().__init__(c, b, chrg, m, a)
+
+    def speed(self):
+        """Return the speed [km/hr]."""
+        # speed is capped at 40 kph (~25 mph)
+        return min(700 * self.motor.power / self.total_weight(), 40)
 
 
 class Bicycle(_Vehicle):
@@ -103,4 +159,57 @@ class Bicycle(_Vehicle):
             )
 
         # A bicycle has level 4 autonomy included
-        super.__init__(c, b, chrg, m, Autonomy("", "4", 0, 0, 0))
+        super().__init__(c, b, chrg, m, Autonomy("default", "4", 0, 0, 0))
+
+    def speed(self):
+        """Return the speed [km/hr]."""
+        # speed is capped at 15 kph (~10 mph)
+        return min(700 * self.motor.power / self.total_weight(), 15)
+
+
+@dataclass
+class Fleet:
+    vehicles: list[_Vehicle]
+    quantities: list[int]
+
+    def cost(self):
+        """Sum of vehicle cost [$]."""
+        return sum([v.cost() * q for v, q in zip(self.vehicles, self.quantities)])
+
+    def availability(self):
+        """Overall system availability is the weighted average of vehicle availability [%]."""
+        # Maximum of all vehicle availability
+        # return max([v.availability() for v in self.vehicles])
+
+        # Weighted average
+        return sum(
+            [
+                v.availability() * (q / sum(self.quantities))
+                for v, q in zip(self.vehicles, self.quantities)
+            ]
+        )
+
+    def trip_throughput(self, distance):
+        """Maximum sustained trip throughput of the fleet [trips/hr]."""
+        return sum(
+            [
+                v.trip_throughput(distance) * q
+                for v, q in zip(self.vehicles, self.quantities)
+            ]
+        )
+
+    def pax_throughput(self, distance):
+        """Maximum sustained passenger throughput [pax/hr]."""
+        return sum(
+            [
+                v.pax_throughput(distance) * q
+                for v, q in zip(self.vehicles, self.quantities)
+            ]
+        )
+
+    def wait_time(self, distance):
+        """Approximate wait time as the average headway / 2 [min]"""
+        headways = [60 / v.trip_throughput(distance) for v in self.vehicles]
+        weights = [q / sum(self.quantities) for q in self.quantities]
+        return sum([(h / 2) * w for h, w in zip(headways, weights)])
+        # return min([60 / v.trip_throughput(distance) for v in self.vehicles]) / 2
