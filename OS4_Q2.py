@@ -8,7 +8,7 @@
 
 # Report:
 # - vehicle speed and range
-# - fleet throughput (pax / hr??)
+# - fleet throughput (trips / hr)
 # - average wait time
 # - availability
 
@@ -30,6 +30,7 @@ from vehicle import *
 from mvu import MVU, Utility
 from dataclasses import dataclass
 import itertools
+import matplotlib.pyplot as plt
 
 # Single Variate Utility Functions
 volume = Utility([0, 500, 1000, 1500, 2000], [0, 0.2, 0.4, 0.8, 1.0])
@@ -108,6 +109,7 @@ bike_motors = {
 
 d = 1.5  # average trip distance [km]
 
+"""
 car1 = RoadVehicle(
     chassis["C1"], batteries["P1"], chargers["G1"], motors["M1"], autonomy["A3"]
 )
@@ -115,6 +117,8 @@ car1 = RoadVehicle(
 car2 = RoadVehicle(
     chassis["C1"], batteries["P3"], chargers["G2"], motors["M4"], autonomy["A3"]
 )
+"""
+
 """
 print(car1.availability())
 print(car1.trip_throughput(d))
@@ -139,19 +143,7 @@ print(fleet2.wait_time(d))
 """
 
 
-def utility_vec(fleet: Fleet, distance):
-    """Return the utility vector for a fleet."""
-    return [
-        fleet.trip_throughput(distance) * 24,
-        fleet.trip_throughput(distance),
-        fleet.wait_time(distance),
-        fleet.availability(),
-    ]
-
-
-# print(f"Utility: {mvu.evaluate(utility_vec(fleet1, d))}")
-# print(f"Cost: {fleet1.cost()}")
-
+# Create every possible car
 cars: list[RoadVehicle] = []
 for c in itertools.product(
     chassis.values(),
@@ -165,9 +157,7 @@ for c in itertools.product(
     except ValueError:
         continue
 
-print(len(cars))
-print(cars[0].design())
-print(cars[1200].design())
+print(f"Cars: {len(cars)}")
 
 bikes: list[Bicycle] = []
 for b in itertools.product(
@@ -181,10 +171,118 @@ for b in itertools.product(
     except ValueError:
         continue
 
+print(f"Bikes: {len(bikes)}")
 
-print(len(bikes))
-print(bikes[0].design())
-print(bikes[15].design())
+
+def utility_vec(fleet: Fleet, distance):
+    """Return the utility vector for a fleet."""
+    return [
+        fleet.trip_throughput(distance) * 24,
+        fleet.trip_throughput(distance),
+        fleet.wait_time(distance),
+        fleet.availability(),
+    ]
+
+
+# Consider the following cases
+# fleets of 5, 10, 15, and 20 vehicles of one type
+fleet_cars = [Fleet([v], [q]) for v, q in itertools.product(cars, [5, 10, 15, 20, 50])]
+fleet_bikes = [
+    Fleet([v], [q])
+    for v, q in itertools.product(bikes, [20, 30, 40, 50, 100, 200, 300])
+]
+
+"""
+fig, ax = plt.subplots()
+ax.scatter(
+    [f.cost() for f in fleet_cars],
+    [mvu.evaluate(utility_vec(f, d)) for f in fleet_cars],
+    c=[f.quantities[0] for f in fleet_cars],
+    marker=".",
+)
+ax.scatter(
+    [f.cost() for f in fleet_bikes],
+    [mvu.evaluate(utility_vec(f, d)) for f in fleet_bikes],
+    c=[f.quantities[0] for f in fleet_bikes],
+    marker="^",
+)
+plt.show()
+"""
+
+# Filter results to those that meet L0 requirements
+fleet_acceptable: list[Fleet] = []
+for f in fleet_cars + fleet_bikes:
+    (volume, throughput, wait_time, availability) = utility_vec(f, d)
+
+    if volume > 1500 and throughput > 150 and wait_time < 5:
+        fleet_acceptable.append(f)
+
+print(f"Fleets that meet L0 requirements: {len(fleet_acceptable)}")
+
+fig, ax = plt.subplots()
+ax.scatter(
+    [f.cost() for f in fleet_acceptable],
+    [mvu.evaluate(utility_vec(f, d)) for f in fleet_acceptable],
+    c=[f.quantities[0] for f in fleet_acceptable],
+    marker=".",
+)
+plt.show()
+
+# Filter results to the pareto front
+fleet_pareto: list[Fleet] = []
+for i, f1 in enumerate(fleet_acceptable):
+    print(i)
+
+    # For each element against every other element
+    is_pareto = True
+    for f2 in fleet_acceptable:
+        if f1 == f2:
+            continue
+
+        # Compare performance
+        u1 = mvu.evaluate(utility_vec(f1, d))
+        c1 = f1.cost()
+
+        u2 = mvu.evaluate(utility_vec(f2, d))
+        c2 = f2.cost()
+
+        # Does f2 have higher utility at lower cost?
+        if u2 >= u1 and c2 <= c1:
+            is_pareto = False
+            break
+
+    if is_pareto:
+        fleet_pareto.append(f1)
+
+print(f"Pareto Front: {len(fleet_pareto)}")
+for f in fleet_pareto:
+    (v, t, w, a) = utility_vec(f, d)
+    print(f"Fleet Performance: {v}, {t}, {w}, {a}")
+    print(f"Fleet Cost: {f.cost()}")
+    print("Fleet Configuration:")
+    for v, q in zip(f.vehicles, f.quantities):
+        print(f"\t{q} | {v.design()}")
+    print()
+
+
+fig, ax = plt.subplots()
+ax.set_xlabel("Cost [$]")
+ax.set_ylabel("Utility [1]")
+ax.set_title("Pareto Front")
+ax.scatter(
+    [f.cost() for f in fleet_pareto],
+    [mvu.evaluate(utility_vec(f, d)) for f in fleet_pareto],
+    c=[f.quantities[0] for f in fleet_pareto],
+    marker="*",
+)
+ax.scatter(
+    [f.cost() for f in fleet_acceptable],
+    [mvu.evaluate(utility_vec(f, d)) for f in fleet_acceptable],
+    c=[f.quantities[0] for f in fleet_acceptable],
+    marker=".",
+)
+plt.show()
+
 
 # For a simple initial model we will assume the following
 # All trips originate at Kendall/MIT with the demand given
