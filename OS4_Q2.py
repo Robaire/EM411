@@ -29,6 +29,7 @@
 from vehicle import *
 from mvu import MVU, Utility
 from dataclasses import dataclass
+import itertools
 
 # Single Variate Utility Functions
 volume = Utility([0, 500, 1000, 1500, 2000], [0, 0.2, 0.4, 0.8, 1.0])
@@ -39,6 +40,7 @@ utilities = [volume, throughput, wait_time, availability]
 weights = [0.15, 0.25, 0.35, 0.25]  # Weights
 mvu = MVU(utilities, weights)
 
+# Road Vehicle Design Options
 batteries = {
     "P1": Battery("P1", 50, 6, 110),
     "P2": Battery("P2", 100, 11, 220),
@@ -79,6 +81,31 @@ autonomy = {
     "A5": Autonomy("A5", "5", 120, 5, 60 * 1000),
 }
 
+# Bike Design Options
+bike_batteries = {
+    "E1": Battery("E1", 0.5, 0.6 * 1000, 5),
+    "E2": Battery("E2", 1.5, 1.5 * 1000, 11),
+    "E3": Battery("E3", 3, 2.6 * 1000, 17),
+}
+
+bike_frames = {
+    "B1": Chassis("B1", 1, 20, 2 * 1000, 30),
+    "B2": Chassis("B2", 1, 17, 3 * 1000, 25),
+    "B3": Chassis("B3", 2, 35, 3.5 * 1000, 40),
+}
+
+bike_chargers = {
+    "G1": Charger("G1", 0.2, 0.3 * 1000, 0.5),
+    "G2": Charger("G2", 0.6, 0.5 * 1000, 1.2),
+}
+
+bike_motors = {
+    "K1": Motor("K1", 5, 0.35, 300),
+    "K2": Motor("K2", 4, 0.5, 400),
+    "K3": Motor("K3", 7, 1.5, 600),
+}
+
+
 d = 1.5  # average trip distance [km]
 
 car1 = RoadVehicle(
@@ -88,7 +115,7 @@ car1 = RoadVehicle(
 car2 = RoadVehicle(
     chassis["C1"], batteries["P3"], chargers["G2"], motors["M4"], autonomy["A3"]
 )
-
+"""
 print(car1.availability())
 print(car1.trip_throughput(d))
 print(car1.pax_throughput(d))
@@ -109,6 +136,7 @@ print(fleet2.trip_throughput(d))
 print(fleet2.pax_throughput(d))
 print(fleet2.cost())
 print(fleet2.wait_time(d))
+"""
 
 
 def utility_vec(fleet: Fleet, distance):
@@ -121,8 +149,42 @@ def utility_vec(fleet: Fleet, distance):
     ]
 
 
-print(f"Utility: {mvu.evaluate(utility_vec(fleet1, d))}")
-print(f"Cost: {fleet1.cost()}")
+# print(f"Utility: {mvu.evaluate(utility_vec(fleet1, d))}")
+# print(f"Cost: {fleet1.cost()}")
+
+cars: list[RoadVehicle] = []
+for c in itertools.product(
+    chassis.values(),
+    batteries.values(),
+    chargers.values(),
+    motors.values(),
+    autonomy.values(),
+):
+    try:
+        cars.append(RoadVehicle(c[0], c[1], c[2], c[3], c[4]))
+    except ValueError:
+        continue
+
+print(len(cars))
+print(cars[0].design())
+print(cars[1200].design())
+
+bikes: list[Bicycle] = []
+for b in itertools.product(
+    bike_frames.values(),
+    bike_batteries.values(),
+    bike_chargers.values(),
+    bike_motors.values(),
+):
+    try:
+        bikes.append(Bicycle(b[0], b[1], b[2], b[3]))
+    except ValueError:
+        continue
+
+
+print(len(bikes))
+print(bikes[0].design())
+print(bikes[15].design())
 
 # For a simple initial model we will assume the following
 # All trips originate at Kendall/MIT with the demand given
