@@ -60,7 +60,12 @@ class _Vehicle:
         self.motor = m
         self.autonomy = a
 
+    def design(self):
+        """Return a string describing the design vector."""
+        pass
+
     def cost(self):
+        """Return the cost of all the components [$]."""
         return (
             self.chassis.cost
             + self.battery.cost
@@ -70,7 +75,7 @@ class _Vehicle:
         )
 
     def empty_weight(self):
-        """Return the empty vehicle weight."""
+        """Return the empty vehicle weight [kg]."""
         return (
             self.chassis.weight
             + self.battery.weight
@@ -80,13 +85,13 @@ class _Vehicle:
         )
 
     def total_weight(self):
-        """Return the vehicle weight with passengers."""
+        """Return the vehicle weight with passengers [kg]."""
         load_factor = 0.75
         passenger_weight = 100  # kg
         return self.empty_weight() + (self.chassis.pax * load_factor * passenger_weight)
 
     def charge_time(self):
-        """Return the charge time in hours."""
+        """Return the charge time [hr]."""
         return self.battery.capacity / self.charger.power
 
     def power_consumption(self):
@@ -147,6 +152,10 @@ class RoadVehicle(_Vehicle):
         # speed is capped at 40 kph (~25 mph)
         return min(700 * self.motor.power / self.total_weight(), 40)
 
+    def design(self):
+        """Return a string describing the design vector."""
+        return f"{self.chassis.label}, {self.battery.label}, {self.charger.label}, {self.motor.label}, {self.autonomy.label}"
+
 
 class Bicycle(_Vehicle):
 
@@ -165,6 +174,10 @@ class Bicycle(_Vehicle):
         """Return the speed [km/hr]."""
         # speed is capped at 15 kph (~10 mph)
         return min(700 * self.motor.power / self.total_weight(), 15)
+
+    def design(self):
+        """Return a string describing the design vector."""
+        return f"{self.chassis.label}, {self.battery.label}, {self.charger.label}, {self.motor.label}"
 
 
 @dataclass
