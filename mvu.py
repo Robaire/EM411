@@ -33,6 +33,7 @@ class MVU:
         self.weights = weights
 
     def evaluate(self, attributes):
+        """Return the utility [1]."""
 
         if len(attributes) != len(self.utilities):
             raise ValueError(f"Attributes must be length {len(self.utilities)}")
