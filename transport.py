@@ -35,7 +35,7 @@ class RealVehicle:
         return (self.battery_capacity * 1000) / self.vehicle.power_consumption()
 
     def move(self, distance):
-        """Decrease the battery capacity for a distance [km]."""
+        """Decrease the battery capacity for a distance traveled in km."""
         self.battery_capacity -= (v.vehicle.power_consumption() * distance) / 1000
         return self.battery_capacity
 
@@ -56,9 +56,9 @@ class Ride:
     complete_time: float = None
 
 
-###############################################
-# Stochastic Model of Transport System Demand #
-###############################################
+####################################################
+# Stochastic Model of Transport System Performance #
+####################################################
 
 # System Scenario 1 #
 # ----------------- #
@@ -69,22 +69,20 @@ class Ride:
 #   - Trips have 1-4 passengers
 #   - Speed limit on surface streets is 40 kph (~25 mph)
 #   - Speed limit for bikes is 15 kph (~10 mph)
-
-
-# Model Approach
-# Assume a uniform distribution of ride requests over each hour
-# Use a probability model to determine if a passenger requests a ride that time step
-# Use a probability model to determine the parameters of the ride requested (# passengers, distance)
-
+#
+# Model Approach:
+#   - Assume a uniform distribution of ride requests over each hour
+#   - Use a probability model to determine the parameters of the ride requested (# passengers, distance)
 
 #######################
 # Model Configuration #
 #######################
-random.seed(411)  # Seed the RNG
+
+random.seed("EM411")  # Seed the RNG
 
 # Distance Model
 distance = lambda: random.gauss(1.5, 0.4)  # 1.5 km average, 0.4 km std-dev
-# distance = lambda: random.gauss(5, 2)  # 1.5 km average, 0.4 km std-dev
+# distance = lambda: random.gauss(5, 2)  # 5 km average, 2 km std-dev
 # Passenger Model
 passengers = lambda: max(round(random.lognormvariate(0, 0.5)), 1)
 
@@ -92,27 +90,14 @@ passengers = lambda: max(round(random.lognormvariate(0, 0.5)), 1)
 DEMAND = [15, 5, 15, 50, 150, 150, 150, 100, 75, 100, 50, 35]
 
 DWELL_TIME = 1 / 60  # [hr] (one minute)
-CHARGE_DISTANCE = (
-    5  # [km] The vehicle when charge with the range drops beneath this value
-)
+CHARGE_DISTANCE = 5  # [km] start charging when range drops below this value
 CHARGE_TIME_PENALTY = 0.25  # [hr] fixed time penalty for charging
 
-####################
-# Simulation Setup #
-####################
+#################
+# Design Vector #
+#################
 
-rides: list[Ride] = []
-for i, demand in enumerate(DEMAND):
-    interval = 24 / len(DEMAND)
-
-    for _ in range(math.ceil(demand)):
-        time = random.uniform(i * interval, (i + 1) * interval)
-        rides.append(Ride(distance(), passengers(), time))
-
-# Sort rides by time
-rides = sorted(rides, key=lambda x: x.start_time)
-
-test_car = RoadVehicle(
+car1 = RoadVehicle(
     car_chassis["C1"],
     car_batteries["P1"],
     car_chargers["G1"],
@@ -120,25 +105,47 @@ test_car = RoadVehicle(
     car_autonomy["A3"],
 )
 
+fleet = Fleet([car1], [15])
+
+####################
+# Simulation Setup #
+####################
+
+# Randomly generate a list of ride requests over a 24 hour period
+rides: list[Ride] = []
+for i, demand in enumerate(DEMAND):
+    interval = 24 / len(DEMAND)
+
+    # TODO: Randomly adjust the demand vector
+    for _ in range(math.ceil(demand)):
+        time = random.uniform(i * interval, (i + 1) * interval)
+        rides.append(Ride(distance(), passengers(), time))
+
+# Sort rides by start time
+rides = sorted(rides, key=lambda x: x.start_time)
+
+# Build a list of real vehicles for the simulation
+vehicles: list[RealVehicle] = []
+for v, q in zip(fleet.vehicles, fleet.quantities):
+    for _ in range(q):
+        vehicles.append(RealVehicle(v))
 
 ###################
 # Simulation Loop #
 ###################
-vehicles: list[RealVehicle] = []
-for _ in range(20):
-    vehicles.append(RealVehicle(test_car))  # need to create new instances
-
 for ride in rides:
 
     # Find the next available vehicle that meets the ride criteria
-    vehicles = sorted(vehicles, key=lambda x: x.next_available)
+    vehicles = sorted(vehicles, key=lambda x: (x.next_available, x.battery_capacity))
     for v in vehicles:
 
+        # Check the vehicle has enough room and distance to complete the ride
         if ride.passengers <= v.vehicle.chassis.pax and v.range() >= ride.distance * 2:
 
             # Set the fill time for the ride
             ride.filled_time = max(ride.start_time, v.next_available)
 
+            # One way travel time
             travel_time = (ride.distance / v.vehicle.speed()) + DWELL_TIME
 
             # Set the completed time for the ride
@@ -153,30 +160,29 @@ for ride in rides:
             # If the vehicle needs to charge afterwards, set the availability
             if v.range() <= CHARGE_DISTANCE:
                 v.next_available += v.charge_time() + CHARGE_TIME_PENALTY
+            # Could make a decision to charge based on the availability of all other vehicles
 
             break
 
+##################
+# Print Analysis #
+##################
 
-# Print Summary
 print(f"{len(rides)} ride requests")
 print(f"{len(vehicles)} fleet vehicles")
 
 completed_rides = [r for r in rides if r.complete_time]
 print(f"{len(completed_rides)} rides completed")
 
+pax_volume = sum([r.passengers for r in rides if r.complete_time])
+print(f"Passenger Volume: {pax_volume}")
+
 wait_times = [
     (r.filled_time - r.start_time) * 60 for r in rides if r.filled_time
 ]  # [min]
 print(f"Average Wait: {sum(wait_times) / len(wait_times)} minutes")
+print(f"Max Wait: {max(wait_times)} minutes")
 
-# Check for new requests this time step, add them to the queue
-# Process any queued requests
-#   Check all queued requests since some might be able to be filled
-# Step the fleet vehicles forward in time
-# Repeat
-
-# Given a fleet configuration find a vehicle to fill the request
-# Track state information of the vehicles throughout the simulation
-# Log statistics of system behavior (such as each requests wait time, etc...)
-# Report system performance
-# Report fleet utility based on system performance
+# The fraction of rides completed with less than 1 min wait time
+availability = len([w for w in wait_times if w < 1]) / len(rides)
+print(f"Availability: {availability}")
