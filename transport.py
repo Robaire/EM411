@@ -160,6 +160,8 @@ for ride in rides:
             # If the vehicle needs to charge afterwards, set the availability
             if v.range() <= CHARGE_DISTANCE:
                 v.next_available += v.charge_time() + CHARGE_TIME_PENALTY
+                v.battery_capacity = v.vehicle.battery.capacity  # Reset the battery
+
             # Could make a decision to charge based on the availability of all other vehicles
 
             break
