@@ -6,7 +6,10 @@ from dataclasses import dataclass
 from mvu import MVU, Utility
 from designs import *
 from vehicle import _Vehicle
+from multiprocessing import Pool
 
+import csv
+import itertools
 import math
 import random
 
@@ -66,8 +69,11 @@ class Ride:
 
 
 class Result:
-    vehicles: list[_Vehicle]
-    fleet: Fleet
+    # vehicles: list[_Vehicle]
+    # fleet: Fleet
+    vehicles: list[str]
+    vehicle_quantities: list[int]
+
     total_requests: int
     completed: int
     dropped: int
@@ -78,12 +84,15 @@ class Result:
     average_duration: float
     average_distance: float
     availability: float
-
     utility: float
+    cost: float
 
-    def __init__(self, rides, vehicles, fleet):
-        self.vehicles = vehicles
-        self.fleet = fleet
+    def __init__(self, rides: list[Ride], vehicles: list[RealVehicle], fleet: Fleet):
+        # self.vehicles = vehicles
+        # self.fleet = fleet
+
+        self.vehicles = [v.design() for v in fleet.vehicles]
+        self.vehicle_quantities = fleet.quantities
 
         self.total_requests = len(rides)
 
@@ -110,9 +119,22 @@ class Result:
 
         self.availability = len([w for w in wait_times if w < 1]) / len(rides)
 
+        # Search for the hour window with the highest pax volume
+        pax_max = 0
+        for ride in completed:
+            pax = [
+                r.passengers
+                for r in completed
+                if r.start_time > ride.start_time
+                and r.complete_time <= ride.start_time + 1
+            ]
+            pax_max = max(sum(pax), pax_max)
+
         self.utility = mvu.evaluate(
-            [self.pax_volume, 0, self.average_wait, self.availability]
+            [self.pax_volume, pax_max, self.average_wait, self.availability]
         )
+
+        self.cost = fleet.cost()
 
 
 ####################################################
@@ -151,6 +173,7 @@ DEMAND_ADJUST = lambda x: x
 
 # Demand over a 24 hour period, evenly spaced
 DEMAND = [15, 5, 15, 50, 150, 150, 150, 100, 75, 100, 50, 35]
+DEMAND = [d for d in DEMAND for _ in (0, 1)]
 # DEMAND = [5000]  # Saturating demand
 
 MAX_WAIT = 10 / 60  # [hr] maximum wait allowed for a ride request or its dropped
@@ -161,6 +184,9 @@ CHARGE_TIME_PENALTY = 0.25  # [hr] fixed time penalty for charging
 
 def run_sim(fleet):
     """Return a Result"""
+
+    if fleet is None:
+        return None
 
     ####################
     # Simulation Setup #
@@ -257,19 +283,80 @@ car2 = RoadVehicle(
 )
 
 
-fleets: list[Fleet] = []
-fleets.append(Fleet([car1], [15]))
-fleets.append(Fleet([car1, car2], [10, 5]))
+# fleets: list[Fleet] = []
+# for _ in range(1000):
+#    fleets.append(Fleet([car1, car2], [10, 5]))
 
-# TODO: Programmatically build fleets
+# results: list[Result] = []
+# for i, fleet in enumerate(fleets):
+#    results.append(run_sim(fleet))
 
+
+def case(c):
+    try:
+        car = Bicycle(c[0], c[1], c[2], c[3])
+        return run_sim(Fleet([car], [c[4]]))
+    except ValueError:
+        return None
+
+
+if __name__ == "__main__":  # Necessary for multiprocessing
+
+    i = itertools.product(
+        bike_frames.values(),
+        bike_batteries.values(),
+        bike_chargers.values(),
+        bike_motors.values(),
+        [20],
+    )
+
+    with Pool() as p:
+        # results: list[Result] = p.map(run_sim, fleets)
+        results: list[Result] = p.map(case, i)
+
+    # Remove None
+    results = [r for r in results if r]
+
+    # Save the results in a CSV
+    # TODO: Save the results in a pickle
+    with open("results.csv", "w", newline="") as output_file:
+        writer = csv.writer(output_file)
+
+        # Print Headers
+        writer.writerow(vars(results[0]).keys())
+
+        # Print Data
+        for r in results:
+            writer.writerow(vars(r).values())
+
+    print(f"Results: {len(results)}")
+
+"""
+# Programmatically build fleets
 results: list[Result] = []
-for fleet in fleets:
-    results.append(run_sim(fleet))
+i = 0
+for c, b, ch, m, a in itertools.product(
+    car_chassis.values(),
+    car_batteries.values(),
+    car_chargers.values(),
+    car_motors.values(),
+    car_autonomy.values(),
+):
+    try:
+        car = RoadVehicle(c, b, ch, m, a)
+    except ValueError:
+        continue
 
-r = run_sim(fleet)
+    # for q in range(5, 20, 5):
+    for q in [5, 10, 15, 20, 25, 30]:
+        results.append(run_sim(Fleet([car], [q])))
+"""
 
-print(f"{len(r.vehicles)} fleet vehicles")
+
+"""
+r = results[0]
+print(f"{len(r.vehicles)} vehicle types")
+print(f"{sum(r.vehicle_quantities)} vehicles")
 print()
 print(f"Total Requests: {r.total_requests}")
 print(f"Completed Rides: {r.completed}")
@@ -285,3 +372,4 @@ print(f"Average Trip Duration: {r.average_duration} min")
 print()
 print(f"Availability: {r.availability}")
 print(f"Utility: {r.utility}")
+"""
