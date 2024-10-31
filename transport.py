@@ -319,7 +319,8 @@ if __name__ == "__main__":  # Necessary for multiprocessing
     b_i = itertools.product(bike_gen(), [50])
     c_i = itertools.product(car_gen(), range(10, 55, 5))
     c_i = itertools.product(car_gen(), [20])
-    i = itertools.product(itertools.chain.from_iterable([b_i, c_i]), repeat=2)
+    # i = itertools.product(itertools.chain.from_iterable([b_i, c_i]), repeat=2)
+    i = itertools.combinations(itertools.chain.from_iterable([b_i, c_i]), r=2)
 
     def fleet_gen(iter):
         for i in iter:
