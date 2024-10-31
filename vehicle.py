@@ -60,6 +60,10 @@ class _Vehicle:
         self.motor = m
         self.autonomy = a
 
+    @classmethod
+    def from_tuple(cls, design):
+        pass
+
     def design(self):
         """Return a string describing the design vector."""
         pass
@@ -147,6 +151,10 @@ class RoadVehicle(_Vehicle):
 
         super().__init__(c, b, chrg, m, a)
 
+    @classmethod
+    def from_tuple(cls, design):
+        return cls(design[0], design[1], design[2], design[3], design[4])
+
     def speed(self):
         """Return the speed [km/hr]."""
         # speed is capped at 40 kph (~25 mph)
@@ -169,6 +177,10 @@ class Bicycle(_Vehicle):
 
         # A bicycle has level 4 autonomy included
         super().__init__(c, b, chrg, m, Autonomy("default", "4", 0, 0, 0))
+
+    @classmethod
+    def from_tuple(cls, design):
+        return cls(design[0], design[1], design[2], design[3])
 
     def speed(self):
         """Return the speed [km/hr]."""

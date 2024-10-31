@@ -7,11 +7,12 @@ from mvu import MVU, Utility
 from designs import *
 from vehicle import _Vehicle
 from multiprocessing import Pool
-
+import matplotlib.pyplot as plt
 import csv
 import itertools
 import math
 import random
+import time
 
 # Single Variate Utility Functions
 volume = Utility([0, 500, 1000, 1500, 2000], [0, 0.2, 0.4, 0.8, 1.0])
@@ -69,30 +70,32 @@ class Ride:
 
 
 class Result:
-    # vehicles: list[_Vehicle]
-    # fleet: Fleet
     vehicles: list[str]
     vehicle_quantities: list[int]
+    vehicle_costs: list[float]
+    vehicle_ranges: list[float]
+    vehicle_speeds: list[float]
 
     total_requests: int
     completed: int
     dropped: int
     impossible: int
     pax_volume: int
+    pax_max: int
     average_wait: float
     max_wait: float
     average_duration: float
     average_distance: float
     availability: float
     utility: float
-    cost: float
+    fleet_cost: float
 
     def __init__(self, rides: list[Ride], vehicles: list[RealVehicle], fleet: Fleet):
-        # self.vehicles = vehicles
-        # self.fleet = fleet
-
         self.vehicles = [v.design() for v in fleet.vehicles]
         self.vehicle_quantities = fleet.quantities
+        self.vehicle_costs = [v.cost() for v in fleet.vehicles]
+        self.vehicle_ranges = [v.range() for v in fleet.vehicles]
+        self.vehicle_speeds = [v.speed() for v in fleet.vehicles]
 
         self.total_requests = len(rides)
 
@@ -130,11 +133,14 @@ class Result:
             ]
             pax_max = max(sum(pax), pax_max)
 
+        self.pax_max = pax_max
+        # self.pax_max = fleet.pax_throughput(1.5)
+
         self.utility = mvu.evaluate(
             [self.pax_volume, pax_max, self.average_wait, self.availability]
         )
 
-        self.cost = fleet.cost()
+        self.fleet_cost = fleet.cost()
 
 
 ####################################################
@@ -159,7 +165,7 @@ class Result:
 # Model Configuration #
 #######################
 
-random.seed("EM411")  # Seed the RNG
+# random.seed("EM411")  # Seed the RNG
 
 # Distance Model
 DISTANCE = lambda: random.gauss(1.5, 0.4)  # 1.5 km average, 0.4 km std-dev
@@ -184,9 +190,6 @@ CHARGE_TIME_PENALTY = 0.25  # [hr] fixed time penalty for charging
 
 def run_sim(fleet):
     """Return a Result"""
-
-    if fleet is None:
-        return None
 
     ####################
     # Simulation Setup #
@@ -261,61 +264,76 @@ def run_sim(fleet):
     ###################
     return Result(rides, vehicles, fleet)
 
-
-#################
-# Design Vector #
-#################
-
-car1 = RoadVehicle(
-    car_chassis["C1"],
-    car_batteries["P1"],
-    car_chargers["G1"],
-    car_motors["M1"],
-    car_autonomy["A3"],
-)
-
-car2 = RoadVehicle(
-    car_chassis["C2"],
-    car_batteries["P1"],
-    car_chargers["G1"],
-    car_motors["M2"],
-    car_autonomy["A3"],
-)
-
-
-# fleets: list[Fleet] = []
-# for _ in range(1000):
-#    fleets.append(Fleet([car1, car2], [10, 5]))
-
-# results: list[Result] = []
-# for i, fleet in enumerate(fleets):
-#    results.append(run_sim(fleet))
-
-
-def case(c):
-    try:
-        car = Bicycle(c[0], c[1], c[2], c[3])
-        return run_sim(Fleet([car], [c[4]]))
-    except ValueError:
-        return None
+    #################
+    # Design Vector #
+    #################
 
 
 if __name__ == "__main__":  # Necessary for multiprocessing
 
-    i = itertools.product(
-        bike_frames.values(),
-        bike_batteries.values(),
-        bike_chargers.values(),
-        bike_motors.values(),
-        [20],
-    )
+    # Construct Five Notional Architectures
+    fleets: list[Fleet] = []
+    # Architecture 1: 30 of the same, simple vehicle
+    fleets.append(Fleet([car_design("C2P2G1M1A3")], [30]))
+    # Architecture 2: 20 of a simple car, 10 of a larger car
+    fleets.append(Fleet([car_design("C1P1G1M1A3"), car_design("C3P1G1M1A3")], [20, 10]))
+    # Architecture 3: 30 of a large vehicle
+    fleets.append(Fleet([car_design("C4P4G2M2A3")], [30]))
+    # Architecture 4: 100 cheap bikes and 10 medium size vehicles
+    fleets.append(Fleet([bike_design("B1E1G1K1"), car_design("C3P2G1M1A3")], [100, 10]))
+    # Architecture 5: 80 fast bikes and 20 medium vehicles
+    fleets.append(Fleet([bike_design("B2E1G2K3"), car_design("C3P1G1M1A3")], [80, 20]))
 
-    with Pool() as p:
+    # Exhaustively consider every case of two vehicles (Bikes and cars)
+    # Consider vehicle quantities from 10 to 100 in increments of 5
+    # Consider (Car, Car), (Bike, Bike), (Bike, Car)
+
+    # Bicycle Generator
+    def bike_gen():
+        for b in itertools.product(
+            bike_frames.values(),
+            bike_batteries.values(),
+            bike_chargers.values(),
+            bike_motors.values(),
+        ):
+            try:
+                yield Bicycle.from_tuple(b)
+            except ValueError:
+                continue
+
+    # Car Generator
+    def car_gen():
+        for c in itertools.product(
+            car_chassis.values(),
+            car_batteries.values(),
+            car_chargers.values(),
+            car_motors.values(),
+            car_autonomy.values(),
+        ):
+            try:
+                yield RoadVehicle.from_tuple(c)
+            except ValueError:
+                continue
+
+    b_i = itertools.product(bike_gen(), range(20, 110, 20))
+    b_i = itertools.product(bike_gen(), [50])
+    c_i = itertools.product(car_gen(), range(10, 55, 5))
+    c_i = itertools.product(car_gen(), [20])
+    i = itertools.product(itertools.chain.from_iterable([b_i, c_i]), repeat=2)
+
+    def fleet_gen(iter):
+        for i in iter:
+            yield Fleet([i[0][0], i[1][0]], [i[0][1], i[1][1]])
+
+    start_time = time.time()
+
+    # Use mutliprocessing to compute in parallel
+    with Pool(16) as p:
+        results: list[Result] = p.map(run_sim, fleet_gen(i))
         # results: list[Result] = p.map(run_sim, fleets)
-        results: list[Result] = p.map(case, i)
 
-    # Remove None
-    results = [r for r in results if r]
+    elapsed = time.time() - start_time
+    print(f"Compute time: {elapsed / 60} minutes")
 
     # Save the results in a CSV
     # TODO: Save the results in a pickle
@@ -331,26 +349,21 @@ if __name__ == "__main__":  # Necessary for multiprocessing
 
     print(f"Results: {len(results)}")
 
-"""
-# Programmatically build fleets
-results: list[Result] = []
-i = 0
-for c, b, ch, m, a in itertools.product(
-    car_chassis.values(),
-    car_batteries.values(),
-    car_chargers.values(),
-    car_motors.values(),
-    car_autonomy.values(),
-):
-    try:
-        car = RoadVehicle(c, b, ch, m, a)
-    except ValueError:
-        continue
+    # Make some plots
+    fig, ax = plt.subplots()
+    ax.set_xlabel("Cost [$]")
+    ax.set_ylabel("Utility [1]")
+    ax.set_title("Architecture Performance")
+    ax.scatter([r.fleet_cost for r in results], [r.utility for r in results])
 
-    # for q in range(5, 20, 5):
-    for q in [5, 10, 15, 20, 25, 30]:
-        results.append(run_sim(Fleet([car], [q])))
-"""
+    # lines = []
+    # labels = []
+    # for i, r in enumerate(results):
+    #    lines.append(ax.scatter([r.fleet_cost], [r.utility]))
+    #    labels.append(f"Architecture {i+1}")
+    # ax.legend(lines, labels)
+
+    # plt.show()
 
 
 """
