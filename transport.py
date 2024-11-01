@@ -7,21 +7,21 @@ from mvu import MVU, Utility
 from designs import *
 from vehicle import _Vehicle
 from multiprocessing import Pool
-import matplotlib.pyplot as plt
 import csv
 import itertools
 import math
 import random
 import time
+from copy import deepcopy
 
 # Single Variate Utility Functions
-volume = Utility([0, 500, 1000, 1500, 2000], [0, 0.2, 0.4, 0.8, 1.0])
-throughput = Utility([0, 50, 100, 150, 200], [0, 0.2, 0.5, 0.9, 1.0])
-wait_time = Utility([0, 5, 10, 15, 20, 30], [1.0, 0.95, 0.75, 0.4, 0.2, 0])
-availability = Utility([0, 0.2, 0.4, 0.6, 0.8, 1.0], [0, 0.2, 0.4, 0.6, 0.8, 1.0])
-utilities = [volume, throughput, wait_time, availability]
-weights = [0.15, 0.25, 0.35, 0.25]  # Weights
-mvu = MVU(utilities, weights)
+mvu_volume = Utility([0, 500, 1000, 1500, 2000], [0, 0.2, 0.4, 0.8, 1.0])
+mvu_throughput = Utility([0, 50, 100, 150, 200], [0, 0.2, 0.5, 0.9, 1.0])
+mvu_wait_time = Utility([0, 5, 10, 15, 20, 30], [1.0, 0.95, 0.75, 0.4, 0.2, 0])
+mvu_availability = Utility([0, 0.2, 0.4, 0.6, 0.8, 1.0], [0, 0.2, 0.4, 0.6, 0.8, 1.0])
+mvu_utilities = [mvu_volume, mvu_throughput, mvu_wait_time, mvu_availability]
+mvu_weights = [0.15, 0.25, 0.35, 0.25]  # Weights
+mvu = MVU(mvu_utilities, mvu_weights)
 
 
 # Class for tracking vehicle state
@@ -29,7 +29,6 @@ class RealVehicle:
     vehicle: _Vehicle
     battery_capacity: float  # Current battery charge [kWh]
     next_available: float = 0  # The time this vehicle becomes available [hr]
-    ride_count: int = 0
 
     def __init__(self, vehicle):
         self.vehicle = vehicle
@@ -57,8 +56,8 @@ class Ride:
     distance: float  # One way ride distance
     passengers: int  # Passenger count
     start_time: float  # When the request begins [hr]
-    filled_time: float = None  # When the request is filled [hr]
-    complete_time: float = None  # When the ride is completed [hr]
+    filled_time: float = -1  # When the request is filled [hr]
+    complete_time: float = -1  # When the ride is completed [hr]
 
     def wait_time(self):
         """Wait time [hr]."""
@@ -99,14 +98,19 @@ class Result:
 
         self.total_requests = len(rides)
 
-        completed = [r for r in rides if r.filled_time]
+        completed = [r for r in rides if r.complete_time > 0.0]
         self.completed = len(completed)
 
-        dropped = [r for r in rides if r.complete_time == -1]
+        dropped = [r for r in rides if r.complete_time == -2.0]
         self.dropped = len(dropped)
 
-        impossible = [r for r in rides if not r.complete_time]
+        impossible = [r for r in rides if r.complete_time == -1.0]
         self.impossible = len(impossible)
+
+        if len(rides) != len(completed) + len(dropped) + len(impossible):
+            print(
+                f"Rides: {len(rides)}, C: {len(completed)}, D: {len(dropped)}, I: {len(impossible)}, SUM: {len(completed) + len(dropped) + len(impossible)}"
+            )
 
         self.pax_volume = sum([r.passengers for r in completed])
 
@@ -165,7 +169,7 @@ class Result:
 # Model Configuration #
 #######################
 
-# random.seed("EM411")  # Seed the RNG
+random.seed("EM411")  # Seed the RNG
 
 # Distance Model
 DISTANCE = lambda: random.gauss(1.5, 0.4)  # 1.5 km average, 0.4 km std-dev
@@ -187,25 +191,16 @@ DWELL_TIME = 1 / 60  # [hr] (one minute)
 CHARGE_DISTANCE = 5  # [km] start charging when range drops below this value
 CHARGE_TIME_PENALTY = 0.25  # [hr] fixed time penalty for charging
 
+COST_CAP = 1_000_000  # [$] fleet cost cap
 
-def run_sim(fleet):
+
+def run_sim(args):
     """Return a Result"""
 
     ####################
     # Simulation Setup #
     ####################
-
-    # Randomly generate a list of ride requests over a 24 hour period
-    rides: list[Ride] = []
-    for i, demand in enumerate(DEMAND):
-        interval = 24 / len(DEMAND)
-
-        for _ in range(math.ceil(DEMAND_ADJUST(demand))):
-            time = random.uniform(i * interval, (i + 1) * interval)
-            rides.append(Ride(DISTANCE(), PASSENGERS(), time))
-
-    # Sort rides by start time
-    rides = sorted(rides, key=lambda x: x.start_time)
+    (fleet, rides) = args
 
     # Build a list of real vehicles for the simulation
     vehicles: list[RealVehicle] = []
@@ -219,6 +214,7 @@ def run_sim(fleet):
     for ride in rides:
 
         # Find the next available vehicle that meets the ride criteria
+        # Is this somehow messing it up?
         vehicles = sorted(
             vehicles,
             key=lambda x: (
@@ -236,9 +232,9 @@ def run_sim(fleet):
             ):
 
                 # Check if this ride will be filled within the max wait time
-                if max(ride.start_time, v.next_available) - ride.start_time > MAX_WAIT:
+                if v.next_available - ride.start_time > MAX_WAIT:
                     # Drop the ride
-                    ride.complete_time = -1
+                    ride.complete_time = -2
                     break
 
                 # One way travel time
@@ -250,7 +246,6 @@ def run_sim(fleet):
 
                 # Update vehicle parameters
                 v.next_available = ride.filled_time + travel_time * 2  # Availability
-                v.ride_count += 1  # Increase the vehicle's ride count
                 v.move(ride.distance * 2)  # Update the battery charge
                 if v.range() <= CHARGE_DISTANCE:
                     v.next_available += v.charge_time() + CHARGE_TIME_PENALTY
@@ -264,15 +259,15 @@ def run_sim(fleet):
     ###################
     return Result(rides, vehicles, fleet)
 
-    #################
-    # Design Vector #
-    #################
 
-
+#################
+# Design Vector #
+#################
 if __name__ == "__main__":  # Necessary for multiprocessing
 
     # Construct Five Notional Architectures
     fleets: list[Fleet] = []
+    """
     # Architecture 1: 30 of the same, simple vehicle
     fleets.append(Fleet([car_design("C2P2G1M1A3")], [30]))
     # Architecture 2: 20 of a simple car, 10 of a larger car
@@ -283,10 +278,31 @@ if __name__ == "__main__":  # Necessary for multiprocessing
     fleets.append(Fleet([bike_design("B1E1G1K1"), car_design("C3P2G1M1A3")], [100, 10]))
     # Architecture 5: 80 fast bikes and 20 medium vehicles
     fleets.append(Fleet([bike_design("B2E1G2K3"), car_design("C3P1G1M1A3")], [80, 20]))
+    """
 
-    # Exhaustively consider every case of two vehicles (Bikes and cars)
-    # Consider vehicle quantities from 10 to 100 in increments of 5
-    # Consider (Car, Car), (Bike, Bike), (Bike, Car)
+    fleets.append(Fleet([bike_design("B1E1G2K3"), car_design("C1P1G1M2A3")], [70, 10]))
+    fleets.append(Fleet([bike_design("B1E1G2K3"), car_design("C3P1G1M2A3")], [70, 10]))
+    fleets.append(Fleet([bike_design("B1E1G2K3"), car_design("C1P1G1M2A3")], [70, 10]))
+    fleets.append(Fleet([bike_design("B1E1G2K3"), car_design("C1P1G1M1A3")], [50, 10]))
+
+    # Randomly generate a list of ride requests over a 24 hour period
+    rides: list[Ride] = []
+    for i, demand in enumerate(DEMAND):
+        interval = 24 / len(DEMAND)
+
+        for _ in range(math.ceil(DEMAND_ADJUST(demand))):
+            ride_time = random.uniform(i * interval, (i + 1) * interval)
+            rides.append(Ride(DISTANCE(), PASSENGERS(), ride_time))
+
+    # Sort rides by start time
+    rides = sorted(rides, key=lambda x: x.start_time)
+
+    def copy_rides(rides):
+        """Create a deep copy."""
+        result: list[Ride] = [None] * len(rides)
+        for i, r in enumerate(rides):
+            result[i] = deepcopy(r)
+        return result
 
     # Bicycle Generator
     def bike_gen():
@@ -315,26 +331,69 @@ if __name__ == "__main__":  # Necessary for multiprocessing
             except ValueError:
                 continue
 
-    b_i = itertools.product(bike_gen(), range(20, 110, 20))
-    b_i = itertools.product(bike_gen(), [50])
-    c_i = itertools.product(car_gen(), range(10, 55, 5))
-    c_i = itertools.product(car_gen(), [20])
+    b_i = itertools.product(bike_gen(), range(40, 101, 10))
+    # b_i = itertools.product(bike_gen(), [50])
+    c_i = itertools.product(car_gen(), range(8, 21, 2))
+    # c_i = itertools.product(car_gen(), [20])
     # i = itertools.product(itertools.chain.from_iterable([b_i, c_i]), repeat=2)
-    i = itertools.combinations(itertools.chain.from_iterable([b_i, c_i]), r=2)
 
-    def fleet_gen(iter):
+    # Compute all single vehicle fleet architectures
+    # i = itertools.chain.from_iterable([b_i, c_i])
+
+    # Compute all combinations of two vehicles
+    # i = itertools.combinations(itertools.chain.from_iterable([b_i, c_i]), r=2)
+
+    # Compute all combinations of bikes and cars
+    i = itertools.product(b_i, c_i)
+
+    # This design space at 846,951 points...
+    # Compute time is approx ~1 min / 1k points
+    # We know we can achieve a utility of 1.0 at a fleet cost of ~$1.15M
+    # So in order to reduce the design space we will cap fleet cost at $1.2M
+    # We will also only consider bike-bike and bike-car architectures (too many car-car)
+
+    def single_gen(iter):
+        for v, q in iter:
+            fleet = Fleet([v], [q])
+            if fleet.cost() <= COST_CAP:
+                yield (fleet, copy_rides(rides))
+                # yield fleet
+
+    def double_gen(iter):
         for i in iter:
-            yield Fleet([i[0][0], i[1][0]], [i[0][1], i[1][1]])
+            fleet = Fleet([i[0][0], i[1][0]], [i[0][1], i[1][1]])
+            if fleet.cost() <= COST_CAP:
+                yield (fleet, copy_rides(rides))
+                # yield fleet
 
+    # l = 0
+    # for _ in double_gen(i):
+    #     l += 1
+    # print(l)
+
+    # Evolutionary algorithm...
+    # Consider 100 random design points
+    # Keep the top 10%
+    # Replace the remaining 90% with randomly mutated variants of top 10%
+    # Repeat X times
+    # An issue with this is that it will just makes fleets large and expensive
+    # Need to penalize cost...
+    # As an alternative
+    # Keep any instances on the pareto front
+    # Randomly mutate to create new missing members...
     start_time = time.time()
 
     # Use mutliprocessing to compute in parallel
     with Pool(16) as p:
-        results: list[Result] = p.map(run_sim, fleet_gen(i))
-        # results: list[Result] = p.map(run_sim, fleets)
+        # results: list[Result] = p.map(run_sim, [(f, copy_rides(rides)) for f in fleets])
+        # results: list[Result] = p.map(run_sim, single_gen(i))
+        results: list[Result] = p.map(run_sim, double_gen(i))
+    # results = list(map(run_sim, double_gen(i)))
+    # results = list(map(run_sim, [(f, copy_rides(rides)) for f in fleets]))
 
     elapsed = time.time() - start_time
-    print(f"Compute time: {elapsed / 60} minutes")
+    print(f"Compute time: {elapsed / 60:.3f} minutes")
+    print(f"Results: {len(results)}")
 
     # Save the results in a CSV
     # TODO: Save the results in a pickle
@@ -347,43 +406,3 @@ if __name__ == "__main__":  # Necessary for multiprocessing
         # Print Data
         for r in results:
             writer.writerow(vars(r).values())
-
-    print(f"Results: {len(results)}")
-
-    # Make some plots
-    fig, ax = plt.subplots()
-    ax.set_xlabel("Cost [$]")
-    ax.set_ylabel("Utility [1]")
-    ax.set_title("Architecture Performance")
-    ax.scatter([r.fleet_cost for r in results], [r.utility for r in results])
-
-    # lines = []
-    # labels = []
-    # for i, r in enumerate(results):
-    #    lines.append(ax.scatter([r.fleet_cost], [r.utility]))
-    #    labels.append(f"Architecture {i+1}")
-    # ax.legend(lines, labels)
-
-    # plt.show()
-
-
-"""
-r = results[0]
-print(f"{len(r.vehicles)} vehicle types")
-print(f"{sum(r.vehicle_quantities)} vehicles")
-print()
-print(f"Total Requests: {r.total_requests}")
-print(f"Completed Rides: {r.completed}")
-print(f"Dropped Rides: {r.dropped}")
-print(f"Impossible Rides: {r.impossible}")
-print()
-print(f"Passenger Volume: {r.pax_volume}")
-print(f"Average Wait: {r.average_wait} min")
-print(f"Max Wait: {r.max_wait} min")
-print()
-print(f"Average Trip Distance: {r.average_distance} km")
-print(f"Average Trip Duration: {r.average_duration} min")
-print()
-print(f"Availability: {r.availability}")
-print(f"Utility: {r.utility}")
-"""
