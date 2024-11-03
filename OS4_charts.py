@@ -8,9 +8,9 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.colors import to_rgb
 
-SINGLES = "./Q3/singles.csv"
-PAIRS = "./Q3/pairs.csv"
-REFERENCE = "./Q3/reference.csv"
+SINGLES = "./Q4/singles.csv"
+PAIRS = "./Q4/pairs.csv"
+REFERENCE = "./Q4/reference.csv"
 MAX_COST = 1_000_000
 
 results = []
@@ -146,6 +146,14 @@ ax.scatter(
     marker=".",
     label="Pairs",
 )
+ax.scatter(
+    reference["fleet_cost"] / 1_000_000,
+    reference["utility"],
+    marker="*",
+    label="Reference",
+    alpha=1,
+)
+
 ax.legend()
 plt.savefig("pareto_front.png")
 

@@ -59,9 +59,9 @@ DEMAND = [15, 5, 15, 50, 150, 150, 150, 100, 75, 100, 50, 35]
 DEMAND = [d for d in DEMAND for _ in (0, 1)]
 # DEMAND = [5000]  # Saturating demand
 
-MAX_WAIT = 10 / 60  # [hr] maximum wait allowed for a ride request or its dropped
+MAX_WAIT = 20 / 60  # [hr] maximum wait allowed for a ride request or its dropped
 AVAILABILITY = 1  # [min] availability threshold
-DWELL_TIME = 1 / 60  # [hr] (one minute)
+DWELL_TIME = 2 / 60  # [hr] (two minutes)
 CHARGE_DISTANCE = 5  # [km] start charging when range drops below this value
 CHARGE_TIME_PENALTY = 0.25  # [hr] fixed time penalty for charging
 
@@ -136,6 +136,17 @@ if __name__ == "__main__":  # Necessary for multiprocessing
             if fleet.cost() <= COST_CAP:
                 yield (fleet, copy_rides(rides))
 
+    # Calculate References
+    fleets: list[Fleet] = []
+    fleets.append(Fleet([bike_design("B2E1G2K3"), car_design("C3P1G1M1A3")], [50, 10]))
+    results = list(map(sim.run, [(f, copy_rides(rides)) for f in fleets]))
+
+    with open("references.csv", "w", newline="") as output_file:
+        writer = csv.writer(output_file)
+        writer.writerow(vars(results[0]).keys())  # Headers
+        for r in results:
+            writer.writerow(vars(r).values())
+
     # Calculate Singles
     bikes = itertools.product(bike_gen(), range(40, 101, 10))
     cars = itertools.product(car_gen(), range(8, 21, 2))
@@ -167,7 +178,6 @@ if __name__ == "__main__":  # Necessary for multiprocessing
     del car_autonomy["A4"]
     del car_autonomy["A5"]
 
-    del bike_frames["B2"]
     del bike_chargers["G1"]
     del bike_motors["K1"]
     del bike_motors["K2"]

@@ -4,15 +4,7 @@ from matplotlib.ticker import PercentFormatter
 import numpy as np
 
 N = 100
-
-
-def DISTANCE():
-    return random.choices(
-        [random.gauss(1.5, 0.4), random.gauss(10, 1)], weights=[99, 1], k=1
-    )[0]
-
-
-dist = DISTANCE
+dist = lambda: round(random.gauss(5, 1))
 
 data = np.zeros(N)
 for i in range(N):

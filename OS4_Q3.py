@@ -125,6 +125,17 @@ if __name__ == "__main__":  # Necessary for multiprocessing
             if fleet.cost() <= COST_CAP:
                 yield (fleet, copy_rides(rides))
 
+    # Calculate References
+    fleets: list[Fleet] = []
+    fleets.append(Fleet([bike_design("B2E1G2K3"), car_design("C3P1G1M1A3")], [50, 10]))
+    results = list(map(sim.run, [(f, copy_rides(rides)) for f in fleets]))
+
+    with open("references.csv", "w", newline="") as output_file:
+        writer = csv.writer(output_file)
+        writer.writerow(vars(results[0]).keys())  # Headers
+        for r in results:
+            writer.writerow(vars(r).values())
+
     # Calculate Singles
     bikes = itertools.product(bike_gen(), range(40, 101, 10))
     cars = itertools.product(car_gen(), range(8, 21, 2))
