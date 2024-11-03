@@ -1,0 +1,2 @@
+vehicles,vehicle_quantities,vehicle_costs,vehicle_ranges,vehicle_speeds,total_requests,completed,dropped,impossible,pax_volume,average_wait,max_wait,average_duration,average_distance,availability,pax_max,utility,fleet_cost
+"['B2, E1, G2, K3', 'C3, P1, G1, M1, A3']","[50, 10]","[4700.0, 47200]","[15.964240102171136, 257.59917568263785]","[13.092269326683292, 15.377855887521969]",1790,1695,94,1,2374,1.5772085588754725,9.995044393429424,7.467681143212416,1.4860125240735254,0.7067039106145251,191,0.9166557476975671,707000.0

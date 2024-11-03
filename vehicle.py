@@ -90,7 +90,7 @@ class _Vehicle:
 
     def total_weight(self):
         """Return the vehicle weight with passengers [kg]."""
-        load_factor = 0.75
+        load_factor = 0.50
         passenger_weight = 100  # kg
         return self.empty_weight() + (self.chassis.pax * load_factor * passenger_weight)
 

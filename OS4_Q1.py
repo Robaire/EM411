@@ -19,3 +19,6 @@ mvu = MVU(utilities, weights)
 print(f"Case A: {mvu.evaluate([1000, 75, 8, 0.7])}")
 print(f"Case B: {mvu.evaluate([2000, 100, 12, 0.6])}")
 print(f"Case C: {mvu.evaluate([750, 75, 6, 0.8])}")
+
+# TODO: Print graphs of each function to validate its behavior
+# Each function needs to be bounded (1, 0) and monotonic
