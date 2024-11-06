@@ -138,7 +138,14 @@ if __name__ == "__main__":  # Necessary for multiprocessing
 
     # Calculate References
     fleets: list[Fleet] = []
-    fleets.append(Fleet([bike_design("B2E1G2K3"), car_design("C3P1G1M1A3")], [50, 10]))
+    fleets.append(
+        Fleet([bike_design("B2E1G2K3"), car_design("C3P1G1M1A3")], [50, 10])
+    )  # Reference
+    fleets.append(Fleet([bike_design("B1E1G2K3")], [70]))  # P1
+    fleets.append(Fleet([bike_design("B3E2G2K3")], [70]))  # P2
+    fleets.append(
+        Fleet([bike_design("B1E1G2K3"), car_design("C1P1G1M2A3")], [60, 8])
+    )  # P3
     results = list(map(sim.run, [(f, copy_rides(rides)) for f in fleets]))
 
     with open("references.csv", "w", newline="") as output_file:

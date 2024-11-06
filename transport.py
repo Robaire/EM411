@@ -112,7 +112,7 @@ class Result:
 
         self.pax_volume = sum([r.passengers for r in completed])
 
-        wait_times = [r.wait_time() * 60 for r in completed]
+        wait_times = [r.wait_time() * 60 for r in completed]  # [min]
         self.average_wait = sum(wait_times) / len(wait_times)
         self.max_wait = max(wait_times)
 
