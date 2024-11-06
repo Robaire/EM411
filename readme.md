@@ -9,3 +9,4 @@ Completed for EM 411, Fall 2024
 
 # Dependencies
 - [numpy](https://numpy.org/)
+- [matplotlib](https://matplotlib.org/)
